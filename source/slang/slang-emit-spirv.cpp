@@ -8572,14 +8572,18 @@ struct SPIRVEmitContext : public SourceEmitterBase, public SPIRVEmitSharedContex
         if (!scope)
             return nullptr;
 
+        // Work around issue #8992: we prefer to use debugFunc->getDebugType() here, but in some
+        // cases (seemingly related to autodiff? and only breaking autodiff-related tests)
+        // debugFunc->getDebugType() ends up returning something that isn't an IRFuncType. When that
+        // happens, fall back to using the `debugType` parameter, which is set to the
+        // (possibly-modified) type of the function in the only callsite where it isn't set to
+        // nullptr (emitFuncDefinition).
         SpvInst* neededDebugType = nullptr;
-        if (debugType)
-        {
+        if (IRFuncType *funcType = as<IRFuncType>(debugFunc->getDebugType())) {
+            neededDebugType = emitDebugType(funcType);
+        } else {
+            SLANG_ASSERT(debugType);
             neededDebugType = emitDebugType(debugType);
-        }
-        else
-        {
-            neededDebugType = emitDebugType(as<IRFuncType>(debugFunc->getDebugType()));
         }
 
         IRBuilder builder(debugFunc);
@@ -8809,16 +8813,22 @@ struct SPIRVEmitContext : public SourceEmitterBase, public SPIRVEmitSharedContex
             return ensureInst(m_voidType);
 
         IRBuilder builder(type);
-        if (as<IRFuncType>(type))
+        if (IRFuncType* funcType = as<IRFuncType>(type))
         {
+            SpvInst* returnType = emitDebugType(funcType->getResultType());
+
             List<SpvInst*> argTypes;
+            for (UInt i = 0; i < funcType->getParamCount(); ++i) {
+                argTypes.add(emitDebugType(funcType->getParamType(i)));
+            }
+
             return emitOpDebugTypeFunction(
                 getSection(SpvLogicalSectionID::ConstantsAndTypes),
                 nullptr,
                 m_voidType,
                 getNonSemanticDebugInfoExtInst(),
                 builder.getIntValue(builder.getUIntType(), 0),
-                ensureInst(m_voidType),
+                returnType,
                 argTypes);
         }
 
