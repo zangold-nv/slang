@@ -8579,9 +8579,12 @@ struct SPIRVEmitContext : public SourceEmitterBase, public SPIRVEmitSharedContex
         // (possibly-modified) type of the function in the only callsite where it isn't set to
         // nullptr (emitFuncDefinition).
         SpvInst* neededDebugType = nullptr;
-        if (IRFuncType *funcType = as<IRFuncType>(debugFunc->getDebugType())) {
+        if (IRFuncType* funcType = as<IRFuncType>(debugFunc->getDebugType()))
+        {
             neededDebugType = emitDebugType(funcType);
-        } else {
+        }
+        else
+        {
             SLANG_ASSERT(debugType);
             neededDebugType = emitDebugType(debugType);
         }
@@ -8818,7 +8821,8 @@ struct SPIRVEmitContext : public SourceEmitterBase, public SPIRVEmitSharedContex
             SpvInst* returnType = emitDebugType(funcType->getResultType());
 
             List<SpvInst*> argTypes;
-            for (UInt i = 0; i < funcType->getParamCount(); ++i) {
+            for (UInt i = 0; i < funcType->getParamCount(); ++i)
+            {
                 argTypes.add(emitDebugType(funcType->getParamType(i)));
             }
 
