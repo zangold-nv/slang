@@ -233,6 +233,18 @@ if(SLANG_ENABLE_GFX)
         DESTINATION ${runtime_subdir}
     )
 endif()
+# ---- Optional spvdb integration for SPVDB_DEBUGGER tests -------------------
+# spvdb lives in external/spvdb (a git submodule). If the submodule has been
+# initialized, build libspvdb and link it into slang-test to enable in-process
+# SPIR-V debugger tests.
+set(_spvdb_src "${slang_SOURCE_DIR}/external/spvdb")
+if(EXISTS "${_spvdb_src}/CMakeLists.txt")
+    add_subdirectory("${_spvdb_src}" "${CMAKE_CURRENT_BINARY_DIR}/spvdb" EXCLUDE_FROM_ALL)
+    set(SLANG_ENABLE_SPVDB TRUE)
+    message(STATUS "spvdb submodule found — SPVDB_DEBUGGER tests enabled in slang-test")
+endif()
+unset(_spvdb_src)
+
 if(SLANG_ENABLE_TESTS AND SLANG_ENABLE_SLANG_RHI)
     # The test executables and runtime-loaded modules
     slang_add_target(
@@ -285,6 +297,11 @@ if(SLANG_ENABLE_TESTS AND SLANG_ENABLE_SLANG_RHI)
         FOLDER test
         DEBUG_DIR ${slang_SOURCE_DIR}
     )
+    if(SLANG_ENABLE_SPVDB)
+        target_link_libraries(slang-test PRIVATE spvdb)
+        target_compile_definitions(slang-test PRIVATE SLANG_ENABLE_SPVDB=1)
+    endif()
+
     add_dependencies(slang-test slang-neural-module slang-workgraph-module)
 
     set_property(
