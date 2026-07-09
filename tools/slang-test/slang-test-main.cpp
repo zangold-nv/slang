@@ -4715,6 +4715,39 @@ static std::string spvdb_run_commands(
                 return "";
             }
         }
+        else if (cmd == "inputloc")
+        {
+            // inputloc <location> <json>  — bind a vertex/fragment Input variable by Location.
+            if (tokens.size() < 3)
+            {
+                *error_out = "spvdb: inputloc requires <location> <json>";
+                return "";
+            }
+            if (!ensure_session()) return "";
+            uint32_t    loc = static_cast<uint32_t>(std::stoul(tokens[1]));
+            std::string json;
+            for (size_t i = 2; i < tokens.size(); ++i)
+            {
+                if (i > 2) json += " ";
+                json += tokens[i];
+            }
+            auto r = spvdb::set_input_location_json(*sess, loc, json);
+            if (!r)
+            {
+                *error_out =
+                    std::string("spvdb: set_input_location_json failed: ") + r.error().message;
+                return "";
+            }
+        }
+        else if (cmd == "outputs")
+        {
+            if (!ensure_session()) return "";
+            auto vars = spvdb::output_variables(*sess);
+            for (const auto& lv : vars)
+                out << "output: " << lv.name << " = " << spvdb_value_str(lv.value) << "\n";
+            if (vars.empty())
+                out << "outputs: (none)\n";
+        }
         else if (cmd == "break")
         {
             if (tokens.size() < 3)
