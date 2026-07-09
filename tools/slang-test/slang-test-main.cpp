@@ -4755,6 +4755,106 @@ static std::string spvdb_run_commands(
                 out << ": " << spvdb::panic_message(*sess);
             out << "\n";
         }
+        else if (cmd == "next")
+        {
+            if (!ensure_session()) return "";
+            spvdb::StopReason reason = spvdb::step_over(*sess);
+            out << "stopped: " << spvdb_stop_reason_str(reason);
+            if (reason == spvdb::StopReason::Panic)
+                out << ": " << spvdb::panic_message(*sess);
+            out << "\n";
+        }
+        else if (cmd == "finish")
+        {
+            if (!ensure_session()) return "";
+            spvdb::StopReason reason = spvdb::step_out(*sess);
+            out << "stopped: " << spvdb_stop_reason_str(reason);
+            if (reason == spvdb::StopReason::Panic)
+                out << ": " << spvdb::panic_message(*sess);
+            out << "\n";
+        }
+        else if (cmd == "print")
+        {
+            if (tokens.size() < 2) { *error_out = "spvdb: print requires <name>"; return ""; }
+            if (!ensure_session()) return "";
+            auto r = spvdb::evaluate_variable(*sess, tokens[1]);
+            if (!r)
+            {
+                *error_out =
+                    std::string("spvdb: evaluate_variable failed: ") + r.error().message;
+                return "";
+            }
+            out << "print: " << r->name << " = " << spvdb_value_str(r->value) << "\n";
+        }
+        else if (cmd == "builtin")
+        {
+            // builtin <name> <val0> [val1] [val2] [val3]
+            if (tokens.size() < 3) { *error_out = "spvdb: builtin requires <name> <val...>"; return ""; }
+            if (!ensure_session()) return "";
+
+            // Map common builtin names to SpvBuiltIn enum values.
+            static const struct { const char* name; uint32_t id; } kBuiltins[] = {
+                { "GlobalInvocationID",   SpvBuiltInGlobalInvocationId   },
+                { "LocalInvocationID",    SpvBuiltInLocalInvocationId    },
+                { "WorkgroupID",          SpvBuiltInWorkgroupId          },
+                { "LocalInvocationIndex", SpvBuiltInLocalInvocationIndex },
+                { "VertexIndex",          SpvBuiltInVertexIndex          },
+                { "InstanceIndex",        SpvBuiltInInstanceIndex        },
+                { "Position",             SpvBuiltInPosition             },
+                { "PointSize",            SpvBuiltInPointSize            },
+                { "FragCoord",            SpvBuiltInFragCoord            },
+                { "FrontFacing",          SpvBuiltInFrontFacing          },
+                { "FragDepth",            SpvBuiltInFragDepth            },
+                { "NumWorkgroups",        SpvBuiltInNumWorkgroups        },
+                { "SubgroupSize",         SpvBuiltInSubgroupSize         },
+            };
+            uint32_t bi    = 0;
+            bool     found = false;
+            for (const auto& kb : kBuiltins)
+            {
+                if (tokens[1] == kb.name)
+                {
+                    bi    = kb.id;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) { *error_out = std::string("spvdb: unknown builtin: ") + tokens[1]; return ""; }
+
+            spvdb::Value bval;
+            size_t       nvals = tokens.size() - 2; // number of value tokens
+            if (nvals >= 3)
+            {
+                // Three or four components — build a composite.
+                std::vector<spvdb::Value> elems;
+                bool as_float = false;
+                for (size_t i = 2; i < tokens.size(); ++i)
+                {
+                    if (tokens[i].find('.') != std::string::npos) { as_float = true; break; }
+                }
+                for (size_t i = 2; i < tokens.size(); ++i)
+                    elems.push_back(as_float ? spvdb::Value::make_f32(std::stof(tokens[i]))
+                                             : spvdb::Value::make_u32(
+                                                   static_cast<uint32_t>(std::stoul(tokens[i]))));
+                bval = spvdb::Value::make_composite(std::move(elems));
+            }
+            else
+            {
+                // Single scalar — try uint first, then float.
+                const std::string& sv = tokens[2];
+                if (sv.find('.') != std::string::npos)
+                    bval = spvdb::Value::make_f32(std::stof(sv));
+                else
+                    bval = spvdb::Value::make_u32(static_cast<uint32_t>(std::stoul(sv)));
+            }
+
+            auto r = spvdb::set_builtin(*sess, bi, bval);
+            if (!r)
+            {
+                *error_out = std::string("spvdb: set_builtin failed: ") + r.error().message;
+                return "";
+            }
+        }
         else if (cmd == "location")
         {
             if (!ensure_session()) return "";
