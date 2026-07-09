@@ -4576,13 +4576,17 @@ static std::string spvdb_value_str(const spvdb::Value& v)
     }
     case Kind::Composite:
     {
-        std::string s = "(";
+        bool        named = !v.member_names.empty() &&
+                            v.member_names.size() == v.elements.size();
+        std::string s = named ? "{" : "(";
         for (size_t i = 0; i < v.elements.size(); ++i)
         {
             if (i) s += ", ";
+            if (named && !v.member_names[i].empty())
+                s += v.member_names[i] + "=";
             s += spvdb_value_str(v.elements[i]);
         }
-        return s + ")";
+        return s + (named ? "}" : ")");
     }
     default: return "<complex>";
     }
