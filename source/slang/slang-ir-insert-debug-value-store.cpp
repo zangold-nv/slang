@@ -268,14 +268,37 @@ void DebugValueStoreContext::insertDebugValueStore(IRFunc* func)
                 {
                     builder.setInsertAfter(storeInst);
                     auto storeVal = storeInst->getVal();
-                    // For scalar values look through same-width integer cast
-                    // chains (e.g. uint→int→Enum(int)) that peephole
-                    // optimization may collapse, leaving the DebugValue
-                    // operand dangling.
-                    setDebugValue(
-                        debugVar,
-                        stripSameWidthIntCasts(storeVal),
-                        accessChain.getArrayView());
+                    // Composite constructors (makeVector / makeMatrix) produce a
+                    // single aggregate value that is often DCE'd once the
+                    // optimizer discovers that each element is used individually.
+                    // Emit one DebugValue per element so the references point at
+                    // the individual scalar SSA values (which are live because
+                    // they appear in real computation).
+                    if (accessChain.getCount() == 0 && (storeVal->getOp() == kIROp_MakeVector ||
+                                                        storeVal->getOp() == kIROp_MakeMatrix))
+                    {
+                        for (UInt i = 0; i < storeVal->getOperandCount(); i++)
+                        {
+                            List<IRInst*> elemChain;
+                            elemChain.add(
+                                builder.getIntValue(builder.getUIntType(), (IRIntegerValue)i));
+                            setDebugValue(
+                                debugVar,
+                                storeVal->getOperand(i),
+                                elemChain.getArrayView());
+                        }
+                    }
+                    else
+                    {
+                        // For scalar values look through same-width integer cast
+                        // chains (e.g. uint→int→Enum(int)) that peephole
+                        // optimization may collapse, leaving the DebugValue
+                        // operand dangling.
+                        setDebugValue(
+                            debugVar,
+                            stripSameWidthIntCasts(storeVal),
+                            accessChain.getArrayView());
+                    }
                 }
             }
             else if (auto swizzledStore = as<IRSwizzledStore>(inst))
