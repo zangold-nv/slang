@@ -1,7 +1,8 @@
-// Tests DebugTypeComposite member-name emission: a struct local variable must
-// appear in 'locals' with named fields ({x=..., y=...}) rather than an
-// anonymous composite ((...)). The struct is stored in Function-scope memory
-// so its type info flows through bytes_to_value() where member names are set.
+// Tests DebugValue composite building for struct local variables.
+// A struct local whose fields are assigned individually via member-access stores
+// must appear in 'locals' with all fields visible.  Slang emits one DebugValue
+// per member store; spvdb must accumulate them into a composite rather than
+// overwriting the whole variable on each update.
 //TEST:SPVDB_DEBUGGER(filecheck=SPVDB): -entry main -stage compute
 
 struct Point
@@ -19,23 +20,23 @@ void main(uniform RWStructuredBuffer<float> inputX,
     Point p;
     p.x = inputX[0];
     p.y = inputY[0];
-    output[0] = p.x + p.y;   // line 22
+    output[0] = p.x + p.y;   // line 23
 }
 
 // SPVDB-CMD: descriptor 0 0 [3.0]
 // SPVDB-CMD: descriptor 0 1 [4.0]
 // SPVDB-CMD: descriptor 0 2 [0.0]
-// SPVDB-CMD: break struct-locals.slang 22
+// SPVDB-CMD: break struct-locals.slang 23
 // SPVDB-CMD: run
 // SPVDB-CMD: location
 // SPVDB-CMD: locals
 // SPVDB-CMD: run
 
 // SPVDB: stopped: Breakpoint
-// SPVDB: location: {{.*}}struct-locals.slang:22
-// NOTE: spvdb currently overwrites the composite variable with each DebugValue
-// for a member field, showing only the last field (y=4) instead of {x=3, y=4}.
-// This is a spvdb bug.  We check that 'p' appears in locals (regression for
-// visibility) but not its exact composite format.
-// SPVDB: local: p = {{.*}}
+// SPVDB: location: {{.*}}struct-locals.slang:23
+// DebugValue instructions with member indices now correctly update individual
+// composite elements.  Both fields must be visible: x=3, y=4 → (3, 4).
+// (Member names are not set via the DebugValue path, so the unnamed format
+// with parentheses is expected rather than the named {x=3, y=4} format.)
+// SPVDB: local: p = (3, 4)
 // SPVDB: stopped: EntryFinished

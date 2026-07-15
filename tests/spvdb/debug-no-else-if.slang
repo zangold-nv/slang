@@ -21,13 +21,14 @@ void main(uniform RWStructuredBuffer<uint> input, uniform RWStructuredBuffer<uin
 // SPVDB-CMD: break debug-no-else-if.slang 13
 // SPVDB-CMD: run
 // SPVDB-CMD: step
+// SPVDB-CMD: location
 // SPVDB-CMD: run
 // SPVDB-CMD: read 0 1
 
-// After stepping past the skipped if-body the debugger must not crash, and
-// execution must produce the correct result.
-// NOTE: spvdb currently reports location :0 after stepping past a skipped
-// if-body (spvdb step-location bug), so we do not check the location here.
+// After stepping past the skipped if-body the debugger must land on line 15
+// (the conditional expression), not report :0.
 // SPVDB: stopped: Breakpoint
+// SPVDB: stopped: Step
+// SPVDB: location: {{.*}}debug-no-else-if.slang:15
 // SPVDB: stopped: EntryFinished
 // SPVDB: read[0][1]: [1]

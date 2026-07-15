@@ -30,9 +30,7 @@ void main(uniform RWStructuredBuffer<uint> input, uniform RWStructuredBuffer<uin
 
 // Under -O2 the struct is tracked via per-member DebugValue (SSA path), not a
 // memory-backed variable.  Before the fix, 's' would not appear in locals at all.
-// NOTE: spvdb currently overwrites the composite with each per-member DebugValue,
-// showing only the last member (b=7) instead of (3, 7).  This is a spvdb bug.
-// We check that 's' appears in locals (regression for visibility), not its value.
-// SPVDB: local: s = {{.*}}
+// DebugValue partial updates now correctly accumulate: a=3, b=7 → (3, 7).
+// SPVDB: local: s = (3, 7)
 // SPVDB: stopped: EntryFinished
 // SPVDB: read[0][1]: [10]
