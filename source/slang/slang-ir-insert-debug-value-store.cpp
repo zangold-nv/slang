@@ -211,6 +211,47 @@ void DebugValueStoreContext::insertDebugValueStore(IRFunc* func)
         auto ptr = builder.emitElementAddress(debugVar, accessChain);
         builder.emitDebugValue(ptr, newValue);
     };
+
+    // Look through a chain of same-width integer casts to find the underlying
+    // value.  Same-width integer casts (e.g. uint→int, int→Enum(int)) are pure
+    // reinterpretations that are frequently simplified away by peephole passes
+    // after insertDebugValueStore runs.  When that happens the DebugValue
+    // instruction would reference a dead instruction, causing the SPIR-V emitter
+    // to substitute OpUndef.  Stripping the cast chain here makes the DebugValue
+    // reference the original computed value, which is used in real computation
+    // and therefore survives DCE.
+    auto stripSameWidthIntCasts = [](IRInst* val) -> IRInst*
+    {
+        while (val->getOp() == kIROp_IntCast)
+        {
+            auto operand = val->getOperand(0);
+            // Only strip when both endpoints are scalar 32-bit integer types
+            // (plain Int/UInt or EnumType wrapping one of those).  Truncating or
+            // widening casts must be preserved because they change the value.
+            auto isSame32BitInt = [](IRInst* type) -> bool
+            {
+                if (auto basic = as<IRBasicType>(type))
+                {
+                    auto op = basic->getOp();
+                    return op == kIROp_IntType || op == kIROp_UIntType;
+                }
+                if (auto enumType = as<IREnumType>(type))
+                {
+                    if (auto tagBasic = as<IRBasicType>(enumType->getTagType()))
+                    {
+                        auto op = tagBasic->getOp();
+                        return op == kIROp_IntType || op == kIROp_UIntType;
+                    }
+                }
+                return false;
+            };
+            if (!isSame32BitInt(val->getDataType()) || !isSame32BitInt(operand->getDataType()))
+                break;
+            val = operand;
+        }
+        return val;
+    };
+
     for (auto block : func->getBlocks())
     {
         IRInst* nextInst = nullptr;
@@ -226,7 +267,15 @@ void DebugValueStoreContext::insertDebugValueStore(IRFunc* func)
                 if (mapVarToDebugVar.tryGetValue(varInst, debugVar))
                 {
                     builder.setInsertAfter(storeInst);
-                    setDebugValue(debugVar, storeInst->getVal(), accessChain.getArrayView());
+                    auto storeVal = storeInst->getVal();
+                    // For scalar values look through same-width integer cast
+                    // chains (e.g. uint→int→Enum(int)) that peephole
+                    // optimization may collapse, leaving the DebugValue
+                    // operand dangling.
+                    setDebugValue(
+                        debugVar,
+                        stripSameWidthIntCasts(storeVal),
+                        accessChain.getArrayView());
                 }
             }
             else if (auto swizzledStore = as<IRSwizzledStore>(inst))

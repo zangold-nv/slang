@@ -29,9 +29,6 @@ void main(uniform RWStructuredBuffer<uint> input, uniform RWStructuredBuffer<uin
 // input[0] = 1 → c = Color(1) = Green = 1
 // If the bug regresses, no DebugLocalVariable is emitted for 'c' and the
 // locals list will be empty.
-// NOTE: Slang emits DebugValue %c %OpUndef for the enum-typed local, so
-// spvdb displays c=0 instead of c=1.  We check only that 'c' appears in
-// locals (regression for visibility), not its value.
-// SPVDB: local: c = {{.*}}
+// SPVDB: local: c = 1
 // SPVDB: stopped: EntryFinished
 // SPVDB: read[0][1]: [1]
