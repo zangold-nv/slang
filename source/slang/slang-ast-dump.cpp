@@ -1,7 +1,7 @@
 // slang-ast-dump.cpp
 #include "slang-ast-dump.h"
 
-#include "../core/slang-string.h"
+#include "core/slang-string.h"
 #include "slang-ast-dispatch.h"
 #include "slang-compiler.h"
 
@@ -330,6 +330,7 @@ struct ASTDumpContext
     void dump(ImageFormat imageFormat) { m_writer->emit(getGLSLNameForImageFormat(imageFormat)); }
     void dump(TryClauseType clauseType) { m_writer->emit(getTryClauseTypeName(clauseType)); }
     void dump(BuiltinRequirementKind kind) { m_writer->emit((int)kind); }
+    void dump(BuiltinOperationKind op) { m_writer->emit(getBuiltinOperationOpText(op)); }
     void dump(MarkupVisibility v) { m_writer->emit((int)v); }
     void dump(TypeTag tag) { m_writer->emit((int)tag); }
     void dump(const String& string) { dump(string.getUnownedSlice()); }

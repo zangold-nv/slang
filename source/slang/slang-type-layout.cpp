@@ -1,7 +1,7 @@
 // slang-type-layout.cpp
 #include "slang-type-layout.h"
 
-#include "../compiler-core/slang-artifact-desc-util.h"
+#include "compiler-core/slang-artifact-desc-util.h"
 #include "slang-check-impl.h"
 #include "slang-ir-insts.h"
 #include "slang-mangle.h"
@@ -958,6 +958,26 @@ struct MetalLayoutRulesImpl : public CPULayoutRulesImpl
         vectorInfo.size = size;
         vectorInfo.alignment = alignment;
 
+        return vectorInfo;
+    }
+};
+
+// Metal structured buffer elements use natural (scalar-aligned, tightly
+// packed) vector and matrix layout. `MetalBufferElementTypeLoweringPolicy`
+// lowers vectors/matrices in such buffers to MSL packed vectors so the
+// emitted MSL agrees with this layout.
+struct MetalStructuredBufferLayoutRulesImpl : MetalLayoutRulesImpl
+{
+    SimpleLayoutInfo GetVectorLayout(
+        BaseType elementType,
+        SimpleLayoutInfo elementInfo,
+        size_t elementCount) override
+    {
+        SLANG_UNUSED(elementType);
+        SimpleLayoutInfo vectorInfo;
+        vectorInfo.kind = elementInfo.kind;
+        vectorInfo.size = elementInfo.size * elementCount;
+        vectorInfo.alignment = elementInfo.alignment;
         return vectorInfo;
     }
 };
@@ -2703,6 +2723,7 @@ static MetalObjectLayoutRulesImpl kMetalObjectLayoutRulesImpl;
 static MetalArgumentBufferElementLayoutRulesImpl kMetalArgumentBufferElementLayoutRulesImpl;
 static MetalTier2ObjectLayoutRulesImpl kMetalTier2ObjectLayoutRulesImpl;
 static MetalLayoutRulesImpl kMetalLayoutRulesImpl;
+static MetalStructuredBufferLayoutRulesImpl kMetalStructuredBufferLayoutRulesImpl;
 
 LayoutRulesImpl kMetalAnyValueLayoutRulesImpl_ = {
     &kMetalLayoutRulesFamilyImpl,
@@ -2736,7 +2757,7 @@ LayoutRulesImpl kMetalTier2ParameterBlockLayoutRulesImpl_ = {
 
 LayoutRulesImpl kMetalStructuredBufferLayoutRulesImpl_ = {
     &kMetalLayoutRulesFamilyImpl,
-    &kMetalLayoutRulesImpl,
+    &kMetalStructuredBufferLayoutRulesImpl,
     &kMetalObjectLayoutRulesImpl,
 };
 
@@ -3071,7 +3092,7 @@ static LayoutSize GetElementCount(IntVal* val)
     {
         return LayoutSize::invalid();
     }
-    else if (as<FuncCallIntVal>(val))
+    else if (as<BuiltinOperationIntVal>(val))
     {
         return LayoutSize::invalid();
     }
@@ -3211,9 +3232,9 @@ static bool isOpenGLTarget(TargetRequest*)
     return false;
 }
 
-bool isD3DTarget(TargetRequest* targetReq)
+bool isD3DTarget(CodeGenTarget target)
 {
-    switch (targetReq->getTarget())
+    switch (target)
     {
     case CodeGenTarget::HLSL:
     case CodeGenTarget::DXBytecode:
@@ -3227,9 +3248,14 @@ bool isD3DTarget(TargetRequest* targetReq)
     }
 }
 
-bool isMetalTarget(TargetRequest* targetReq)
+bool isD3DTarget(TargetRequest* targetReq)
 {
-    switch (targetReq->getTarget())
+    return isD3DTarget(targetReq->getTarget());
+}
+
+bool isMetalTarget(CodeGenTarget target)
+{
+    switch (target)
     {
     default:
         return false;
@@ -3239,6 +3265,11 @@ bool isMetalTarget(TargetRequest* targetReq)
     case CodeGenTarget::MetalLibAssembly:
         return true;
     }
+}
+
+bool isMetalTarget(TargetRequest* targetReq)
+{
+    return isMetalTarget(targetReq->getTarget());
 }
 
 bool isKhronosTarget(CodeGenTarget target)
@@ -3336,6 +3367,16 @@ bool isWGPUTarget(TargetRequest* targetReq)
     return isWGPUTarget(targetReq->getTarget());
 }
 
+bool doesTargetSupportVkBindingOnEntryPointParameters(CodeGenTarget target)
+{
+    return isKhronosTarget(target) || isWGPUTarget(target);
+}
+
+bool doesTargetSupportVkBindingOnEntryPointParameters(TargetRequest* targetReq)
+{
+    return doesTargetSupportVkBindingOnEntryPointParameters(targetReq->getTarget());
+}
+
 bool isKernelTarget(CodeGenTarget codeGenTarget)
 {
     return ArtifactDescUtil::makeDescForCompileTarget(asExternal(codeGenTarget)).style ==
@@ -3360,7 +3401,7 @@ static bool getLLVMBuiltinTypeLayoutInfo(TargetRequest* targetReq, TargetBuiltin
     using InfoFuncV1 =
         SlangResult (*)(Slang::CharSlice targetTriple, Slang::TargetBuiltinTypeLayoutInfo* info);
 
-    auto infoFunc = (InfoFuncV1)llvmLib->findFuncByName("getLLVMTargetBuiltinTypeLayoutInfo_V1");
+    auto infoFunc = (InfoFuncV1)llvmLib->findFuncByName("getLLVMTargetBuiltinTypeLayoutInfo_V2");
 
     if (!infoFunc)
         return false;
@@ -3373,6 +3414,8 @@ TargetBuiltinTypeLayoutInfo getBuiltinTypeLayoutInfo(TargetRequest* targetReq)
 {
     TargetBuiltinTypeLayoutInfo info;
     info.genericPointerSize = 8; // Assume 64-bit pointers by default.
+    info.stringSize = 0;         // Assume strings are unsized types by default.
+    info.stringAlignment = 0;
 
     // If we don't know the target, we just have to assume the defaults. This
     // type of usage occurs in IR checking passes prior to target-specific
@@ -6381,6 +6424,9 @@ RefPtr<TypeLayout> createTypeLayoutWith(
     LayoutRulesImpl* rules,
     Type* type)
 {
+    // `createTypeLayout` dereferences `rules` unconditionally, so a null here is
+    // a caller bug that would otherwise surface as a silent access violation.
+    SLANG_RELEASE_ASSERT(rules);
     auto c = context.with(rules);
     return createTypeLayout(c, type);
 }
